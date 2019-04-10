@@ -1,14 +1,13 @@
 //Still working on this. contains lots of unused artifacts from code that I still have to put in here 
-//or tried out and did not clean up yet. Code is working though, Pir active light bright, pir inactive light dims.
+//or tried out and did not clean up yet. Code is working though, Pir active light solid, pir inactive light Fire2012WithPalette.
 
-//Now to try and get my fire routine in here and a solid colour to blend to on PIR activation.
-
+//Next I will try and get some more soft transitions with fastled blending or fading
 
 //the time we give the sensor to calibrate (10-60 secs according to the datasheet)
 int calibrationTime = 30;      
  
 //the time when the sensor outputs a low impulse
-long unsigned int lowIn;        
+//long unsigned int lowIn;  //Does not work with FIRE2012withpalette stops the animation      
  
 //the amount of milliseconds the sensor has to be low
 //before we assume all motion has stopped
@@ -18,7 +17,7 @@ boolean lockLow = true;
 boolean takeLowTime;
  
 int pirPin = 16;    //the digital pin connected to the PIR sensor's output
-// int ledPin = 13;
+//int ledPin =  ;       // When using your internal led to see when pir is activated.
 
 //#define FASTLED_ESP8266_NODEMCU_PIN_ORDER // Only use when using nodeMCU pin numbers like D4,D5,D12,D15 etc...
 
@@ -44,40 +43,24 @@ int pirPin = 16;    //the digital pin connected to the PIR sensor's output
                                  // Fastled calculates power consumption by using known consumption specs per led and chipset, to lower brightness when 
                                  // you try and draw more power then your powersupply can handle. This to not damage your electronics.
 
-#define BRIGHTNESS  25        // Overall Brightnes from 0 up to 255
+#define BRIGHTNESS  10        // Overall Brightnes from 0 up to 255
 #define FRAMES_PER_SECOND 120   // Speed of the frames. Higher number is more speed.
-//#define DIMMING             8
+#define COOLING  55 // 20/100
+#define SPARKING 15 // 50/200
 
-bool gReverseDirection = false;
+bool gReverseDirection = false; //Fire2012withpalette fire direction
+
+//uint8_t stripLength; // Used to store a strip length.
+//uint8_t gHue = 0; // rotating "base color" used by many of the Fastled patterns
 
 CRGB leds[NUM_LEDS_0 + NUM_LEDS_1 + NUM_LEDS_2 + NUM_LEDS_3 + NUM_LEDS_4];  // Add all the leds together here
-
-uint8_t stripLength; // Used to store a strip length.
-uint8_t gHue = 0; // rotating "base color" used by many of the Fastled patterns
-
 CRGBPalette16 gPal;
  
  
 /////////////////////////////
 //SETUP
 void setup(){
-  Serial.begin(9600);
-  pinMode(pirPin, INPUT);
-  // pinMode(LED_PIN_0, LED_PIN_1, LED_PIN_2, LED_PIN_3, LED_PIN_4 OUTPUT);
-  digitalWrite(pirPin, LOW);
- 
-  //give the sensor some time to calibrate
-  Serial.print("calibrating sensor ");
-    for(int i = 0; i < calibrationTime; i++){
-      Serial.print(".");
-      delay(000);
-      }
-    Serial.println(" done");
-    Serial.println("SENSOR ACTIVE");
-    delay(0);
-
-
-delay(3000); // sanity delay
+  delay(3000); // sanity delay
   FastLED.addLeds<CHIPSET, LED_PIN_0, CLOCK_PIN, COLOR_ORDER>(leds, NUM_LEDS_0).setCorrection( TypicalLEDStrip );
   FastLED.addLeds<CHIPSET, LED_PIN_1, CLOCK_PIN, COLOR_ORDER>(leds, NUM_LEDS_1).setCorrection( TypicalLEDStrip );
   FastLED.addLeds<CHIPSET, LED_PIN_2, CLOCK_PIN, COLOR_ORDER>(leds, NUM_LEDS_2).setCorrection( TypicalLEDStrip );
@@ -87,20 +70,80 @@ delay(3000); // sanity delay
   FastLED.setBrightness( BRIGHTNESS );
 
   gPal = CRGBPalette16( CRGB::Black, CRGB::OrangeRed, CRGB::Gold, CRGB::LightYellow);
-    
+
+  Serial.begin(9600);
+  pinMode(pirPin, INPUT);
+  digitalWrite(pirPin, LOW);
+ 
+  //give the sensor some time to calibrate
+    Serial.print("calibrating sensor ");
+    for(int i = 0; i < calibrationTime; i++){
+    Serial.print(".");
+    delay(000);
     }
- 
+    Serial.println(" done");
+    Serial.println("SENSOR ACTIVE");
+    delay(0);
+    }
+
 ////////////////////////////
-//LOOP
+//         LOOPS          //
+////////////////////////////
+
+
+  void Fire2012WithPalette()
+  { 
+
+  random16_add_entropy( random(256));
+  
+  // Array of temperature readings at each simulation cell
+  static byte heat[NUM_LEDS_0];
+
+  // Step 1.  Cool down every cell a little
+    for( int i = 0; i < NUM_LEDS_0; i++) {
+      heat[i] = qsub8( heat[i],  random8(0, ((COOLING * 10) / NUM_LEDS_0) + 2));
+    }
+  
+    // Step 2.  Heat from each cell drifts 'up' and diffuses a little
+    for( int k= NUM_LEDS_0 - 1; k >= 2; k--) {
+      heat[k] = (heat[k - 1] + heat[k - 2] + heat[k - 2] ) / 3;
+    }
+    
+    
+    // Step 3.  Randomly ignite new 'sparks' of heat near the bottom
+    if( random8() < SPARKING ) {
+      int y = random8(7);
+      heat[y] = qadd8( heat[y], random8(160,255) );
+    }
+
+    // Step 4.  Map from heat cells to LED colors
+    for( int j = 0; j < NUM_LEDS_0; j++) {
+      // Scale the heat value from 0-255 down to 0-240
+      // for best results with color palettes.
+      byte colorindex = scale8( heat[j], 240);
+      CRGB color = ColorFromPalette( gPal, colorindex);
+      int pixelnumber;
+      if( gReverseDirection ) {
+        pixelnumber = (NUM_LEDS_0-1) - j;
+      } else {
+        pixelnumber = j;
+      }
+      leds[pixelnumber] = color;
+      addGlitter(1);
+     }
+     }
+     void addGlitter( fract8 chanceOfGlitter) 
+    {
+    if( random8() < chanceOfGlitter) {
+    leds[ random16(NUM_LEDS_0) ] += CRGB::Orange;
+  }
+}
+
 void loop()
-
-
-
-{
- 
-     if(digitalRead(pirPin) == HIGH){
+         { 
+         if(digitalRead(pirPin) == HIGH){
   //     digitalWrite(ledPin, HIGH);   //the led visualizes the sensors output pin state
-       if(lockLow){
+         if(lockLow){
          //makes sure we wait for a transition to LOW before any further output is made:
          lockLow = false;
                   
@@ -108,24 +151,26 @@ void loop()
          Serial.print("motion detected at ");
          Serial.print(millis()/1000);
          Serial.println(" sec");
-         delay(0000);
+         delay(0); // Might also delay fastled animations
+         fill_solid(leds, NUM_LEDS_0 + NUM_LEDS_1 + NUM_LEDS_2 + NUM_LEDS_3 + NUM_LEDS_4, CRGB (250, 248, 80));
          FastLED.show();
-         FastLED.delay(1000 / FRAMES_PER_SECOND);
+         // FastLED.delay(1000 / FRAMES_PER_SECOND);
          
          }        
          takeLowTime = true;        
-       }
+         }
  
-     if(digitalRead(pirPin) == LOW){      
-//       digitalWrite(ledPin, LOW);  //the led visualizes the sensors output pin state
+        if(digitalRead(pirPin) == LOW){      
+//      digitalWrite(ledPin, LOW);  //the led visualizes the sensors output pin state
  
-       if(takeLowTime){
-        lowIn = millis();          //save the time of the transition from high to LOW
+        if(takeLowTime){
+        //lowIn = millis();          //save the time of the transition from high to LOW Does not work with FIRE2012withpalette
         takeLowTime = false;       //make sure this is only done at the start of a LOW phase
         }
        //if the sensor is low for more than the given pause,
        //we assume that no more motion is going to happen
-       if(!lockLow && millis() - lowIn > pause){
+       //if(!lockLow && millis() - lowIn > pause) //Does not work with FIRE2012withpalette
+       {
            //makes sure this block of code is only executed again after
            //a new motion sequence has been detected
            lockLow = true;
@@ -133,18 +178,11 @@ void loop()
            Serial.print("motion ended at ");      //output
            Serial.print((millis() - pause)/1000);
            Serial.println(" sec");
-           delay(0);
-           fadeToBlackBy( leds, NUM_LEDS_0 + NUM_LEDS_1 + NUM_LEDS_2 + NUM_LEDS_3 + NUM_LEDS_4, 200);
+           delay(0); // Also delays the Fastled2012withpalette animation.
+           Fire2012WithPalette();
            FastLED.show();
           
-           
-           }
-
-           
-  //fill_solid( leds, NUM_LEDS, CRGB::Linen );
-  for(int i = 0; i<NUM_LEDS_0;i++){
-   leds[i] = CRGB (250, 248, 80);
-  }
-       }
+         }
+     }
+}
        
-  } 
